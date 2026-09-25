@@ -1,3 +1,4 @@
+import { requireAdminPage } from "@/lib/auth";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTimesheet, listEmployees } from "@/lib/db";
@@ -6,6 +7,7 @@ import { DraftEditor } from "@/components/DraftEditor";
 export const dynamic = "force-dynamic";
 
 export default async function EditTimesheetPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireAdminPage();
   const { id } = await params;
   const sheet = getTimesheet(Number(id));
   if (!sheet) notFound();

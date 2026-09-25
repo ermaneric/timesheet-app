@@ -18,7 +18,14 @@ function blankDraft(employeeName: string): TimesheetDraft {
   };
 }
 
-export function ManualEntryClient({ employeeNames, defaultEmployee }: { employeeNames: string[]; defaultEmployee: string }) {
+type Props = {
+  employeeNames: string[];
+  defaultEmployee: string;
+  /** Set when an employee is submitting their own sheet. */
+  lockedEmployee?: boolean;
+};
+
+export function ManualEntryClient({ employeeNames, defaultEmployee, lockedEmployee }: Props) {
   const [draft, setDraft] = useState(() => blankDraft(defaultEmployee));
   const [version, setVersion] = useState(0);
   const [photo, setPhoto] = useState<File | null>(null);
@@ -38,7 +45,8 @@ export function ManualEntryClient({ employeeNames, defaultEmployee }: { employee
     setError(null);
     try {
       const [d] = await parseFile(photo);
-      reset({ ...d, employeeName: d.employeeName || draft.employeeName, sourceType: "manual" });
+      const employeeName = lockedEmployee ? draft.employeeName : d.employeeName || draft.employeeName;
+      reset({ ...d, employeeName, sourceType: d.sourceType === "photo" || d.sourceType === "pdf" ? d.sourceType : "manual" });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -50,13 +58,13 @@ export function ManualEntryClient({ employeeNames, defaultEmployee }: { employee
     <div className="space-y-4">
       <div className="card flex flex-wrap items-center gap-3 p-4">
         <button type="button" className="btn" onClick={() => fileRef.current?.click()}>
-          {photo ? "Change photo" : "Attach photo of sheet (optional)"}
+          {photo ? "Change photo" : lockedEmployee ? "Take or choose a photo of your sheet" : "Attach photo of sheet (optional)"}
         </button>
         <input
           ref={fileRef}
           type="file"
           hidden
-          accept="image/*,.pdf"
+          accept="image/*,.pdf,.xlsx,.xls,.csv"
           onChange={(e) => {
             const f = e.target.files?.[0];
             e.target.value = "";
@@ -69,7 +77,7 @@ export function ManualEntryClient({ employeeNames, defaultEmployee }: { employee
           <>
             <span className="muted text-sm">{photo.name}</span>
             <button type="button" className="btn btn-primary" onClick={readPhoto} disabled={reading}>
-              {reading ? "Reading…" : "Fill in table from photo"}
+              {reading ? "Reading…" : "Fill in table from this file"}
             </button>
             <button
               type="button"
@@ -92,8 +100,10 @@ export function ManualEntryClient({ employeeNames, defaultEmployee }: { employee
         key={version}
         initial={draft}
         employeeNames={employeeNames}
-        previewUrl={photoUrl}
+        previewUrl={photo && (photo.type.startsWith("image/") || photo.type === "application/pdf") ? photoUrl : null}
         previewType={photo?.type}
+        lockedEmployee={lockedEmployee}
+        savedLink={lockedEmployee ? { href: "/me", label: "See my timesheets" } : undefined}
       />
     </div>
   );

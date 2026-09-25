@@ -1,3 +1,4 @@
+import { requireAdminPage } from "@/lib/auth";
 import { listTimesheets, listWeeks } from "@/lib/db";
 import { formatWeek, isIsoDate, todayIso, weekStartFor } from "@/lib/dates";
 import { computeTotals } from "@/lib/totals";
@@ -6,6 +7,7 @@ import { TimesheetTable } from "@/components/TimesheetTable";
 export const dynamic = "force-dynamic";
 
 export default async function ExportPage({ searchParams }: { searchParams: Promise<{ week?: string; employees?: string | string[] }> }) {
+  await requireAdminPage();
   const sp = await searchParams;
   const weeks = listWeeks();
   const week = sp.week && isIsoDate(sp.week) ? weekStartFor(sp.week) : (weeks[0] ?? weekStartFor(todayIso()));
@@ -17,6 +19,7 @@ export default async function ExportPage({ searchParams }: { searchParams: Promi
   const picked = sp.employees === undefined ? null : [sp.employees].flat().flatMap((v) => v.split(",")).map(Number);
   const selected = new Set(picked ?? employees.keys());
   const sheets = all.filter((s) => selected.has(s.employeeId));
+  const unreviewed = sheets.filter((s) => s.status === "submitted");
 
   const byEmployee = new Map<number, typeof sheets>();
   for (const s of sheets) byEmployee.set(s.employeeId, [...(byEmployee.get(s.employeeId) ?? []), s]);
@@ -61,6 +64,13 @@ export default async function ExportPage({ searchParams }: { searchParams: Promi
             <p className="muted text-xs">Tip: after changing checkboxes, press Update so the downloads match.</p>
           </form>
 
+          {unreviewed.length > 0 && (
+            <p className="warn p-3 text-sm">
+              {unreviewed.length} timesheet(s) this week haven&apos;t been reviewed yet (
+              {[...new Set(unreviewed.map((s) => s.employeeName))].join(", ")}). They&apos;re included in the export — review
+              them first if you haven&apos;t checked them.
+            </p>
+          )}
           <div className="card flex flex-wrap items-center gap-3 p-4">
             <a className="btn btn-primary" href={link("detail")}>
               Download detail CSV

@@ -1,18 +1,22 @@
 import { NextResponse } from "next/server";
 import { parseSpreadsheet } from "@/lib/parse/spreadsheet";
 import { parseWithVision } from "@/lib/parse/vision";
+import { getSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
 const SPREADSHEET = /\.(xlsx|xlsm|xls|ods|csv|tsv)$/i;
+const MAX_BYTES = 15 * 1024 * 1024;
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
 /** Reads an uploaded timesheet and returns editable drafts. Nothing is saved here. */
 export async function POST(req: Request) {
+  if (!(await getSession())) return NextResponse.json({ error: "Please log in again." }, { status: 401 });
   const form = await req.formData();
   const file = form.get("file");
   if (!(file instanceof File)) return NextResponse.json({ error: "No file uploaded." }, { status: 400 });
+  if (file.size > MAX_BYTES) return NextResponse.json({ error: "That file is too big (15 MB max)." }, { status: 413 });
   const referenceYear = Number(form.get("referenceYear")) || new Date().getFullYear();
   const data = Buffer.from(await file.arrayBuffer());
 

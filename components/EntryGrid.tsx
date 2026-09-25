@@ -3,6 +3,7 @@
 import { ENTRY_FIELDS, emptyEntry, type EntryInput, type EntryFieldKey } from "@/lib/fields";
 import { computeTotals } from "@/lib/totals";
 import { TotalsBlock } from "./TotalsBlock";
+import { useIsNarrow } from "./useIsNarrow";
 
 type Props = {
   entries: EntryInput[];
@@ -20,6 +21,7 @@ const WIDTH: Partial<Record<EntryFieldKey, string>> = {
 /** Editable timesheet grid, columns in the same order as the paper sheet. */
 export function EntryGrid({ entries, onChange, weekStart }: Props) {
   const totals = computeTotals(entries);
+  const narrow = useIsNarrow();
 
   const update = (i: number, key: EntryFieldKey, raw: string) => {
     const next = entries.slice();
@@ -40,6 +42,49 @@ export function EntryGrid({ entries, onChange, weekStart }: Props) {
 
   const removeRow = (i: number) => onChange(entries.filter((_, j) => j !== i));
 
+  const input = (e: EntryInput, i: number, f: (typeof ENTRY_FIELDS)[number]) => (
+    <input
+      className="input"
+      aria-label={`${f.label} row ${i + 1}`}
+      type={f.type === "date" ? "date" : f.type === "number" ? "number" : "text"}
+      inputMode={f.type === "number" ? "decimal" : undefined}
+      step={f.type === "number" ? "any" : undefined}
+      style={f.type === "number" ? { textAlign: "right" } : undefined}
+      value={e[f.key] ?? ""}
+      onChange={(ev) => update(i, f.key, ev.target.value)}
+    />
+  );
+
+  if (narrow) {
+    // Phone layout: one card per row, fields stacked in the same order as the sheet.
+    return (
+      <div className="space-y-3">
+        {entries.map((e, i) => (
+          <div key={i} className="rounded-lg border p-3" style={{ borderColor: "var(--line)" }}>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="font-semibold">Row {i + 1}</span>
+              <button type="button" className="btn-danger text-sm underline" onClick={() => removeRow(i)}>
+                Remove
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {ENTRY_FIELDS.map((f) => (
+                <label key={f.key} className={f.key === "notes" || f.key === "date" || f.key === "jobNumber" ? "col-span-2" : ""}>
+                  <span className="muted text-xs font-semibold">{f.label}</span>
+                  {input(e, i, f)}
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
+        <button type="button" className="btn w-full justify-center" onClick={addRow}>
+          + Add row
+        </button>
+        <TotalsBlock totals={totals} />
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="overflow-x-auto">
@@ -59,16 +104,7 @@ export function EntryGrid({ entries, onChange, weekStart }: Props) {
               <tr key={i}>
                 {ENTRY_FIELDS.map((f) => (
                   <td key={f.key} style={{ padding: "0.15rem" }}>
-                    <input
-                      className="input"
-                      aria-label={`${f.label} row ${i + 1}`}
-                      type={f.type === "date" ? "date" : f.type === "number" ? "number" : "text"}
-                      inputMode={f.type === "number" ? "decimal" : undefined}
-                      step={f.type === "number" ? "any" : undefined}
-                      style={f.type === "number" ? { textAlign: "right" } : undefined}
-                      value={e[f.key] ?? ""}
-                      onChange={(ev) => update(i, f.key, ev.target.value)}
-                    />
+                    {input(e, i, f)}
                   </td>
                 ))}
                 <td style={{ textAlign: "center" }}>

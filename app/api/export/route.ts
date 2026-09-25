@@ -1,12 +1,14 @@
 import { listTimesheets } from "@/lib/db";
 import { detailCsv, summaryCsv } from "@/lib/export/csv";
 import { isIsoDate } from "@/lib/dates";
+import { getSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** GET /api/export?week=YYYY-MM-DD&type=detail|summary&employees=1,2 */
 export async function GET(req: Request) {
+  if ((await getSession())?.role !== "admin") return new Response("Not authorized", { status: 401 });
   const url = new URL(req.url);
   const week = url.searchParams.get("week") ?? "";
   const type = url.searchParams.get("type") === "summary" ? "summary" : "detail";

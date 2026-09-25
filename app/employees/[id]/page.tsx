@@ -1,11 +1,14 @@
+import { requireAdminPage } from "@/lib/auth";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getEmployee, listTimesheets, type Timesheet } from "@/lib/db";
+import { getEmployeeAuth, listTimesheets, type Timesheet } from "@/lib/db";
+import { StatusBadge } from "@/components/StatusBadge";
+import { PinForm } from "@/components/office/PinForm";
 import { formatWeek } from "@/lib/dates";
 import { computeTotals } from "@/lib/totals";
 import { TimesheetTable } from "@/components/TimesheetTable";
 import { TotalsBlock } from "@/components/TotalsBlock";
-import { deleteEmployeeAction, deleteTimesheetAction, renameEmployeeAction } from "@/app/actions";
+import { deleteEmployeeAction, deleteTimesheetAction, markReviewedAction, renameEmployeeAction } from "@/app/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -18,8 +21,9 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 export default async function EmployeePage({ params }: { params: Promise<{ id: string }> }) {
+  await requireAdminPage();
   const { id } = await params;
-  const employee = getEmployee(Number(id));
+  const employee = getEmployeeAuth(Number(id));
   if (!employee) notFound();
 
   const sheets = listTimesheets({ employeeId: employee.id });
@@ -35,9 +39,10 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
           </Link>
           <h1 className="text-2xl font-bold">{employee.name}</h1>
         </div>
-        <details className="text-sm">
+        <details className="text-sm" open={!employee.pinHash}>
           <summary className="cursor-pointer">Employee settings</summary>
           <div className="card mt-2 space-y-3 p-3">
+            <PinForm employeeId={employee.id} hasPin={!!employee.pinHash} />
             <form action={renameEmployeeAction} className="flex gap-2">
               <input type="hidden" name="id" value={employee.id} />
               <input name="name" defaultValue={employee.name} className="input" aria-label="Employee name" />
@@ -64,8 +69,9 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
               </Link>
             </div>
             {weekSheets.map((s) => (
-              <div key={s.id} className="space-y-2">
+              <div key={s.id} id={`sheet-${s.id}`} className="space-y-2">
                 <div className="flex flex-wrap items-center gap-3 text-sm">
+                  <StatusBadge status={s.status} />
                   <span className="muted">
                     {SOURCE_LABEL[s.sourceType] ?? s.sourceType}
                     {s.sourceFileName ? ` · ${s.sourceFileName}` : ""}
@@ -73,6 +79,12 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
                   <Link className="underline" href={`/timesheets/${s.id}/edit`}>
                     Edit
                   </Link>
+                  {s.status === "submitted" && (
+                    <form action={markReviewedAction}>
+                      <input type="hidden" name="id" value={s.id} />
+                      <button className="btn btn-primary">Mark reviewed</button>
+                    </form>
+                  )}
                   <form action={deleteTimesheetAction}>
                     <input type="hidden" name="id" value={s.id} />
                     <input type="hidden" name="back" value={`/employees/${employee.id}`} />
