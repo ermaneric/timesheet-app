@@ -15,11 +15,24 @@ type Props = {
   /** Image/PDF of the original sheet, shown next to the grid for checking. */
   previewUrl?: string | null;
   previewType?: string;
+  /** Employee submitting their own sheet: name is shown but can't be changed. */
+  lockedEmployee?: boolean;
+  /** Where the "saved" confirmation links to (defaults to the employee's page). */
+  savedLink?: { href: string; label: string };
   onSaved?: (result: Extract<SaveResult, { ok: true }>) => void;
 };
 
 /** Employee + week + editable rows, with save. Used for uploads, manual entry and edits. */
-export function DraftEditor({ initial, employeeNames, timesheetId, previewUrl, previewType, onSaved }: Props) {
+export function DraftEditor({
+  initial,
+  employeeNames,
+  timesheetId,
+  previewUrl,
+  previewType,
+  lockedEmployee,
+  savedLink,
+  onSaved,
+}: Props) {
   const [draft, setDraft] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<Extract<SaveResult, { ok: true }> | null>(null);
@@ -55,10 +68,10 @@ export function DraftEditor({ initial, employeeNames, timesheetId, previewUrl, p
     return (
       <div className="card p-4">
         <p className="font-semibold">
-          ✓ Saved {draft.entries.length} row(s) for {draft.employeeName} — week of {formatWeek(weekStartFor(draft.weekStart))}.
+          ✓ {lockedEmployee ? "Sent" : "Saved"} {draft.entries.length} row(s) for {draft.employeeName} — week of {formatWeek(weekStartFor(draft.weekStart))}.
         </p>
-        <Link className="underline" href={`/employees/${saved.employeeId}`}>
-          View {draft.employeeName}&apos;s timesheets
+        <Link className="underline" href={savedLink?.href ?? `/employees/${saved.employeeId}`}>
+          {savedLink?.label ?? `View ${draft.employeeName}'s timesheets`}
         </Link>
       </div>
     );
@@ -72,6 +85,12 @@ export function DraftEditor({ initial, employeeNames, timesheetId, previewUrl, p
   return (
     <div className="card space-y-4 p-4">
       <div className="flex flex-wrap items-end gap-4">
+        {lockedEmployee ? (
+          <div>
+            <span className="text-sm font-semibold">Employee</span>
+            <p className="mt-1 py-1 text-lg font-semibold">{draft.employeeName}</p>
+          </div>
+        ) : (
         <label className="block">
           <span className="text-sm font-semibold">Employee</span>
           <input
@@ -88,6 +107,7 @@ export function DraftEditor({ initial, employeeNames, timesheetId, previewUrl, p
             ))}
           </datalist>
         </label>
+        )}
         <label className="block">
           <span className="text-sm font-semibold">Week of (any day in the week)</span>
           <input
@@ -137,7 +157,7 @@ export function DraftEditor({ initial, employeeNames, timesheetId, previewUrl, p
       {error && <p className="warn px-3 py-2 text-sm font-semibold">{error}</p>}
       <div className="flex items-center gap-3">
         <button type="button" className="btn btn-primary" onClick={save} disabled={pending}>
-          {pending ? "Saving…" : timesheetId ? "Save changes" : "Confirm & save"}
+          {pending ? "Saving…" : timesheetId ? "Save changes" : lockedEmployee ? "Send to office" : "Confirm & save"}
         </button>
         {timesheetId && saved && <span className="text-sm">✓ Saved</span>}
       </div>

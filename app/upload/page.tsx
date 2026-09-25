@@ -1,9 +1,11 @@
+import { requireAdminPage } from "@/lib/auth";
 import { listEmployees } from "@/lib/db";
 import { UploadClient } from "./UploadClient";
 
 export const dynamic = "force-dynamic";
 
-export default function UploadPage() {
+export default async function UploadPage() {
+  await requireAdminPage();
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">Upload timesheets</h1>

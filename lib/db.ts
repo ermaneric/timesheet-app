@@ -11,7 +11,8 @@ import { ENTRY_FIELDS, NUMBER_FIELDS, type EntryInput, type SourceType, type Tim
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS employees (
   id INTEGER PRIMARY KEY,
-  name TEXT NOT NULL UNIQUE COLLATE NOCASE
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  pin_hash TEXT
 );
 CREATE TABLE IF NOT EXISTS timesheets (
   id INTEGER PRIMARY KEY,
@@ -19,6 +20,7 @@ CREATE TABLE IF NOT EXISTS timesheets (
   week_start TEXT NOT NULL,
   source_type TEXT NOT NULL,
   source_file_name TEXT,
+  status TEXT NOT NULL DEFAULT 'reviewed',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS timesheets_employee_week ON timesheets(employee_id, week_start);
@@ -54,6 +56,21 @@ const COLUMN: Record<(typeof ENTRY_FIELDS)[number]["key"], string> = {
   notes: "notes",
 };
 
+/** Columns added after the first release; added in place to older databases. */
+const ADDED_COLUMNS: [table: string, column: string, definition: string][] = [
+  ["employees", "pin_hash", "TEXT"],
+  ["timesheets", "status", "TEXT NOT NULL DEFAULT 'reviewed'"],
+];
+
+function migrate(db: DatabaseSync): void {
+  for (const [table, column, definition] of ADDED_COLUMNS) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!cols.some((c) => c.name === column)) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+  }
+}
+
 const globalForDb = globalThis as unknown as { timesheetDb?: DatabaseSync };
 
 export function getDb(): DatabaseSync {
@@ -63,6 +80,7 @@ export function getDb(): DatabaseSync {
     const db = new DatabaseSync(file);
     db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
     db.exec(SCHEMA);
+    migrate(db);
     globalForDb.timesheetDb = db;
   }
   return globalForDb.timesheetDb;
@@ -77,7 +95,11 @@ export function resetDbForTests(file = ":memory:"): void {
 
 export type Employee = { id: number; name: string };
 
+/** `submitted` = sent in by the employee, waiting for the office to check it. */
+export type TimesheetStatus = "submitted" | "reviewed";
+
 export type EmployeeSummary = Employee & {
+  hasPin: boolean;
   weeks: number;
   latestWeek: string | null;
   entryCount: number;
@@ -92,6 +114,7 @@ export type Timesheet = {
   weekStart: string;
   sourceType: SourceType;
   sourceFileName: string | null;
+  status: TimesheetStatus;
   createdAt: string;
   entries: SavedEntry[];
 };
@@ -112,7 +135,7 @@ function transaction<T>(fn: () => T): T {
 export function listEmployees(): EmployeeSummary[] {
   const rows = getDb()
     .prepare(
-      `SELECT e.id, e.name,
+      `SELECT e.id, e.name, e.pin_hash IS NOT NULL AS hasPin,
               COUNT(DISTINCT t.week_start) AS weeks,
               MAX(t.week_start) AS latestWeek,
               (SELECT COUNT(*) FROM entries en JOIN timesheets t2 ON t2.id = en.timesheet_id
@@ -121,7 +144,12 @@ export function listEmployees(): EmployeeSummary[] {
         GROUP BY e.id ORDER BY e.name COLLATE NOCASE`,
     )
     .all() as unknown as EmployeeSummary[];
-  return rows.map((r) => ({ ...r, weeks: Number(r.weeks), entryCount: Number(r.entryCount) }));
+  return rows.map((r) => ({
+    ...r,
+    hasPin: Boolean(r.hasPin),
+    weeks: Number(r.weeks),
+    entryCount: Number(r.entryCount),
+  }));
 }
 
 export function getEmployee(id: number): Employee | null {
@@ -129,8 +157,30 @@ export function getEmployee(id: number): Employee | null {
   return (row as Employee | undefined) ?? null;
 }
 
+export function normalizeName(name: string): string {
+  return name.trim().replace(/\s+/g, " ");
+}
+
+/** Case-insensitive lookup by name (used by the employee login). */
+export function findEmployeeByName(name: string): (Employee & { pinHash: string | null }) | null {
+  const row = getDb()
+    .prepare("SELECT id, name, pin_hash AS pinHash FROM employees WHERE name = ?")
+    .get(normalizeName(name));
+  return (row as (Employee & { pinHash: string | null }) | undefined) ?? null;
+}
+
+export function getEmployeeAuth(id: number): (Employee & { pinHash: string | null }) | null {
+  const row = getDb().prepare("SELECT id, name, pin_hash AS pinHash FROM employees WHERE id = ?").get(id);
+  return (row as (Employee & { pinHash: string | null }) | undefined) ?? null;
+}
+
+/** Store an already-hashed PIN, or null to block the employee from logging in. */
+export function setEmployeePinHash(id: number, pinHash: string | null): void {
+  getDb().prepare("UPDATE employees SET pin_hash = ? WHERE id = ?").run(pinHash, id);
+}
+
 export function findOrCreateEmployee(name: string): Employee {
-  const clean = name.trim().replace(/\s+/g, " ");
+  const clean = normalizeName(name);
   if (!clean) throw new Error("Employee name is required.");
   const db = getDb();
   db.prepare("INSERT INTO employees (name) VALUES (?) ON CONFLICT(name) DO NOTHING").run(clean);
@@ -138,7 +188,7 @@ export function findOrCreateEmployee(name: string): Employee {
 }
 
 export function renameEmployee(id: number, name: string): void {
-  const clean = name.trim().replace(/\s+/g, " ");
+  const clean = normalizeName(name);
   if (!clean) throw new Error("Employee name is required.");
   getDb().prepare("UPDATE employees SET name = ? WHERE id = ?").run(clean, id);
 }
@@ -166,7 +216,13 @@ function loadEntries(timesheetIds: number[]): Map<number, SavedEntry[]> {
   return map;
 }
 
-type TimesheetFilter = { employeeId?: number; weekStart?: string; id?: number; employeeIds?: number[] };
+type TimesheetFilter = {
+  employeeId?: number;
+  weekStart?: string;
+  id?: number;
+  employeeIds?: number[];
+  status?: TimesheetStatus;
+};
 
 export function listTimesheets(filter: TimesheetFilter = {}): Timesheet[] {
   const where: string[] = [];
@@ -183,6 +239,10 @@ export function listTimesheets(filter: TimesheetFilter = {}): Timesheet[] {
     where.push("t.week_start = ?");
     params.push(filter.weekStart);
   }
+  if (filter.status) {
+    where.push("t.status = ?");
+    params.push(filter.status);
+  }
   if (filter.employeeIds?.length) {
     where.push(`t.employee_id IN (${filter.employeeIds.map(() => "?").join(",")})`);
     params.push(...filter.employeeIds);
@@ -190,7 +250,7 @@ export function listTimesheets(filter: TimesheetFilter = {}): Timesheet[] {
   const sheets = getDb()
     .prepare(
       `SELECT t.id, t.employee_id AS employeeId, e.name AS employeeName, t.week_start AS weekStart,
-              t.source_type AS sourceType, t.source_file_name AS sourceFileName, t.created_at AS createdAt
+              t.source_type AS sourceType, t.source_file_name AS sourceFileName, t.status, t.created_at AS createdAt
          FROM timesheets t JOIN employees e ON e.id = t.employee_id
         ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
         ORDER BY t.week_start DESC, e.name COLLATE NOCASE, t.id`,
@@ -222,16 +282,19 @@ function insertEntries(timesheetId: number, entries: EntryInput[]): void {
   });
 }
 
-export type SaveTimesheetInput = Pick<TimesheetDraft, "employeeName" | "weekStart" | "sourceType" | "sourceFileName" | "entries">;
+export type SaveTimesheetInput = Pick<
+  TimesheetDraft,
+  "employeeName" | "weekStart" | "sourceType" | "sourceFileName" | "entries"
+> & { status?: TimesheetStatus };
 
 export function createTimesheet(input: SaveTimesheetInput): Timesheet {
   const id = transaction(() => {
     const employee = findOrCreateEmployee(input.employeeName);
     const result = getDb()
       .prepare(
-        "INSERT INTO timesheets (employee_id, week_start, source_type, source_file_name) VALUES (?, ?, ?, ?)",
+        "INSERT INTO timesheets (employee_id, week_start, source_type, source_file_name, status) VALUES (?, ?, ?, ?, ?)",
       )
-      .run(employee.id, input.weekStart, input.sourceType, input.sourceFileName);
+      .run(employee.id, input.weekStart, input.sourceType, input.sourceFileName, input.status ?? "reviewed");
     const id = Number(result.lastInsertRowid);
     insertEntries(id, input.entries);
     return id;
@@ -251,15 +314,17 @@ export function updateTimesheet(id: number, input: Pick<SaveTimesheetInput, "emp
   return getTimesheet(id)!;
 }
 
+export function setTimesheetStatus(id: number, status: TimesheetStatus): void {
+  getDb().prepare("UPDATE timesheets SET status = ? WHERE id = ?").run(status, id);
+}
+
 export function deleteTimesheet(id: number): void {
   getDb().prepare("DELETE FROM timesheets WHERE id = ?").run(id);
 }
 
 /** Existing sheets for an employee/week — used to warn about duplicate uploads. */
 export function findExistingSheets(employeeName: string, weekStart: string): Timesheet[] {
-  const employee = getDb()
-    .prepare("SELECT id FROM employees WHERE name = ?")
-    .get(employeeName.trim().replace(/\s+/g, " ")) as { id: number } | undefined;
+  const employee = findEmployeeByName(employeeName);
   if (!employee) return [];
   return listTimesheets({ employeeId: employee.id, weekStart });
 }

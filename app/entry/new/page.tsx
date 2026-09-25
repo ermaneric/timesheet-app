@@ -1,9 +1,11 @@
+import { requireAdminPage } from "@/lib/auth";
 import { listEmployees } from "@/lib/db";
 import { ManualEntryClient } from "./ManualEntryClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function ManualEntryPage({ searchParams }: { searchParams: Promise<{ employee?: string }> }) {
+  await requireAdminPage();
   const { employee } = await searchParams;
   return (
     <div className="space-y-4">
