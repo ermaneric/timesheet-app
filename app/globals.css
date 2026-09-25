@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f6f7f9;
+  --card: #ffffff;
+  --ink: #1b1f24;
+  --muted: #5d6673;
+  --line: #dde1e6;
+  --accent: #0e7c86;
+  --accent-ink: #ffffff;
+  --warn-bg: #fff6e0;
+  --warn-ink: #7a5200;
+  --total-bg: #d9f7fa;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111418;
+    --card: #1a1f25;
+    --ink: #e8ebee;
+    --muted: #9aa4af;
+    --line: #2d343c;
+    --accent: #3cc3cf;
+    --accent-ink: #081315;
+    --warn-bg: #3a2e12;
+    --warn-ink: #f3d493;
+    --total-bg: #123a3e;
+  }
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  cursor: pointer;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.btn-danger {
+  color: #c0392b;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  padding: 0.35rem 0.5rem;
+  background: var(--card);
+  color: var(--ink);
+}
+.input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+table.sheet {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.875rem;
+}
+table.sheet th,
+table.sheet td {
+  border: 1px solid var(--line);
+  padding: 0.3rem 0.45rem;
+  text-align: left;
+  vertical-align: middle;
+}
+table.sheet th {
+  font-weight: 700;
+  white-space: nowrap;
+}
+table.sheet td.num,
+table.sheet th.num {
+  text-align: right;
+}
+table.sheet tr.total td {
+  font-weight: 700;
+}
+.total-cell {
+  background: var(--total-bg);
+}
+.warn {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  border-radius: 0.5rem;
+}
